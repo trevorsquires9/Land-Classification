@@ -31,17 +31,26 @@ from sklearn import linear_model
 from sklearn.neural_network import MLPClassifier
 import pandas as pd
 from Tkinter import *
+import gdal
+from osgeo import gdal_array
 
 # =============================================================================
 # Define functions for GUI
 # =============================================================================
 def getMainData():
-    master.destroy()
     global svmDo,sgdDo,rfDo,mlpDo
+    global image, train, imageFileName, trainFileName
     svmDo = svmRun.get()
     sgdDo = sgdRun.get()
     rfDo = rfRun.get()
     mlpDo = mlpRun.get()
+    
+    imageFileName = imageLabel.get()
+    trainFileName = trainLabel.get()
+    master.destroy()
+    image = gdal.Open(imageFileName)
+    train = gdal.Open(trainFileName)
+    
     if svmDo:
         svmMaster = Tk()
         Label(svmMaster, text="Select your Kernel Function:").grid(row=0,column=0)
@@ -105,14 +114,7 @@ def getMainData():
         print '\t- Random Forest with ' + str(treeNum.get()) + ' trees'
     if mlpDo:
         print '\t- Multi-Layered Perception with ' + str(layerNum.get()) + ' layers and ' + str(neuronNum.get()) + ' neurons in each layer\n'
-    if svmDo:
-        svmclf.fit(Xtrain,yTrain)
-    if sgdDo:
-        sgdclf.fit(Xtrain,yTrain)
-    if rfDo:
-        rfclf.fit(Xtrain,yTrain)
-    if mlpDo:
-        mlpclf.fit(Xtrain,yTrain)
+
                 
 def runSVM(svmMaster,kernelLabel,):
     svmKernel = kernelLabel.get()
@@ -124,13 +126,13 @@ def runSGD(sgdMaster,lossLabel,):
     sgdLoss = lossLabel.get()
     sgdMaster.destroy()
     global sgdclf
-    sgdclf = linear_model.SGDClassifier(max_iter=5000,penalty=sgdLoss,n_iter_no_change=50,tol=1e-7)
+    sgdclf = linear_model.SGDClassifier(max_iter=5000,penalty=sgdLoss,n_iter_no_change=50,tol=1e-7,warm_start=True)
 
 def runRF(rfMaster,treeNum,):
     rfTree = treeNum.get()
     rfMaster.destroy()
     global rfclf
-    rfclf = RandomForestClassifier(n_estimators = rfTree, oob_score=True)
+    rfclf = RandomForestClassifier(n_estimators = rfTree, oob_score=True,warm_start=True,n_jobs=-1)
 
 def runMLP(mlpMaster,layerNum,neuronNum,):
     mlpLayer = layerNum.get()
@@ -138,12 +140,45 @@ def runMLP(mlpMaster,layerNum,neuronNum,):
     mlpMaster.destroy()
     global mlpclf
     layers = np.ones(mlpLayer,dtype = np.int)*mlpNeuron
-    mlpclf = MLPClassifier(solver='adam',hidden_layer_sizes = layers.tolist(),max_iter=4000,tol=1e-8)
-
+    mlpclf = MLPClassifier(solver='adam',hidden_layer_sizes = layers.tolist(),max_iter=4000,tol=1e-8,warm_start=True)
 
 # =============================================================================
-# Initialization of data - to be changed later
+# Define the GUI used for obtaining the data and specifications
 # =============================================================================
+master = Tk()
+Label(master, text="Image to classify (should be .tif file)").grid(row=0)
+Label(master, text="Labeled data ").grid(row=1)
+
+imageLabel = Entry(master)
+trainLabel = Entry(master)
+imageLabel.insert(10,'gdalTesting.tif')
+imageLabel.grid(row=0, column=1)
+trainLabel.grid(row=1, column=1)
+Label(master,text="Check the methods that will classify the data").grid(row=2)
+
+svmRun = IntVar() 
+rfRun = IntVar() 
+sgdRun = IntVar() 
+mlpRun = IntVar() 
+
+Checkbutton(master, text='SVM', variable=svmRun).grid(row=3,column=0, sticky=W) 
+Checkbutton(master, text='Random Forest', variable=rfRun).grid(row=3,column=1, sticky=W) 
+Checkbutton(master, text='SGD', variable=sgdRun).grid(row=4,column=0, sticky=W) 
+Checkbutton(master, text='MLP', variable=mlpRun).grid(row=4,column=1, sticky=W) 
+
+
+Button(master, text='Quit', command=master.quit).grid(row=5, column=0, sticky=W, pady=4)
+Button(master, text='Continue', command=getMainData).grid(row=5, column=1, sticky=W, pady=4)
+
+mainloop()
+
+# =============================================================================
+# Preprocessing of input data
+# =============================================================================
+
+
+
+
 m = 80
 n = 200
 image = np.random.rand(m,n,18)
@@ -166,37 +201,24 @@ yTest = yAll[Xtrain.shape[0]:Xall.shape[0]]
 newShape = (image.shape[0]*image.shape[1], image.shape[2])
 imageVectorized = image.reshape(newShape)
 
+
 # =============================================================================
-# Define the GUI used for obtaining
-# =============================================================================
-master = Tk()
-Label(master, text="Image to classify (should be .tif file)").grid(row=0)
-Label(master, text="Labeled data ").grid(row=1)
+# Do the training
+# =============================================================================    
+if svmDo:
+    svmclf.fit(Xtrain,yTrain)
+if sgdDo:
+    sgdclf.fit(Xtrain,yTrain)
+if rfDo:
+    rfclf.fit(Xtrain,yTrain)
+if mlpDo:
+    mlpclf.fit(Xtrain,yTrain)
 
-imageLabel = Entry(master)
-trainLabel = Entry(master)
-imageLabel.grid(row=0, column=1)
-trainLabel.grid(row=1, column=1)
-Label(master,text="Check the methods that will classify the data").grid(row=2)
-
-svmRun = IntVar() 
-rfRun = IntVar() 
-sgdRun = IntVar() 
-mlpRun = IntVar() 
-Checkbutton(master, text='SVM', variable=svmRun).grid(row=3,column=0, sticky=W) 
-Checkbutton(master, text='Random Forest', variable=rfRun).grid(row=3,column=1, sticky=W) 
-Checkbutton(master, text='SGD', variable=sgdRun).grid(row=4,column=0, sticky=W) 
-Checkbutton(master, text='MLP', variable=mlpRun).grid(row=4,column=1, sticky=W) 
-
-Button(master, text='Quit', command=master.quit).grid(row=5, column=0, sticky=W, pady=4)
-Button(master, text='Continue', command=getMainData).grid(row=5, column=1, sticky=W, pady=4)
-
-mainloop()
-
-    
 # =============================================================================
 # Compute summary statistics and other analysis
 # =============================================================================    
+
+
 print '\nSummary Statistics'
 
 if svmDo:
