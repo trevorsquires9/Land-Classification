@@ -353,7 +353,7 @@ blockSize = imageXSize*colPerIt
 blockPred = np.zeros((blockSize,4))
 pred = np.ones((imageSize,4))*-1
 
-lastEntry = np.arange(imageSize,step=blockSize)[-1:]
+lastEntry = np.arange(imageSize,step=blockSize)[-1:][0]
 
 for i in np.arange(lastEntry,step=blockSize):
     tmpData = readBlockData(imageToClassify,int(i/imageXSize),0,colPerIt,imageXSize,featNum)
@@ -374,7 +374,24 @@ for i in np.arange(lastEntry,step=blockSize):
     blockEnsemble = mode(blockPredValid.transpose())
     ensemblePred[i:i+blockSize] = blockEnsemble[0].transpose()
     pred[i:i+blockSize] = blockPred
-    
+
+tmpData = readBlockData(imageToClassify,int(lastEntry/imageXSize),0,imageYSize-lastEntry/imageXSize,imageXSize,featNum)
+blockPred = np.zeros((imageXSize*(imageYSize-lastEntry/imageXSize),4))
+if svmUse.get():
+    svmPred = svmclf.predict(tmpData)
+    blockPred[:,0] = svmPred
+if sgdUse.get():
+    sgdPred = sgdclf.predict(tmpData)
+    blockPred[:,1] = sgdPred
+if rfUse.get():
+    rfPred = rfclf.predict(tmpData)
+    blockPred[:,2] = rfPred
+if mlpUse.get():
+    mlpPred = mlpclf.predict(tmpData)
+    blockPred[:,3] = mlpPred
+pred[lastEntry:] = blockPred
+
+ensemblePred[lastEntry:] = mode(blockPred[:,np.nonzero(ensemble)].reshape((imageSize-lastEntry,ensemble.sum())).transpose())[0].transpose()
 ensemblePred = ensemblePred.reshape(imageXSize,imageYSize)
 
 
