@@ -6,17 +6,17 @@
 #       Trevor Squires
 # 
 #   Functionality
-#       Given satellite imagery in the form of a .tiff file and a respectable 
+#       Given satellite imagery in the form of a .tif file and a respectable 
 #       number of labeled areas, this function allows the user to select between
 #       multiple different classification algorithms while viewing summary 
-#       statistics in the form of confusion matrices, out of bag errors, and 
+#       statistics in the form of confusion matricesand out of bag cross validation. 
 # 
 #   Notes
-#       - Need to figure out how to read in .tiff files and preprocess
-#       - Make sure to read data in small chunks
-#       - Would like confusion matrix to be on testing set instead of training
-#       - If there is a tie for best classification, ensemble currently chooses
-#         the lowest classification (definitely not optimal)
+#       - Figure out why it doesn't like to read .csv file and why I have to remove
+#         the first training entry
+#       - Add comments where helpful
+#       - Figure out a better way to handle file IO (wrt directories)
+#       - Handle the last not so block-block
 #
 # =============================================================================
 # Necessary Packages
@@ -26,6 +26,7 @@ import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn import svm
 from sklearn import linear_model
 from sklearn.neural_network import MLPClassifier
@@ -33,6 +34,61 @@ import pandas as pd
 from Tkinter import *
 import gdal
 from osgeo import gdal_array
+
+# =============================================================================
+# Nice mode function I found online https://stackoverflow.com/a/35674754
+# =============================================================================
+def mode(ndarray, axis=0):
+    # Check inputs
+    ndarray = np.asarray(ndarray)
+    ndim = ndarray.ndim
+    if ndarray.size == 1:
+        return (ndarray[0], 1)
+    elif ndarray.size == 0:
+        raise Exception('Cannot compute mode on empty array')
+    try:
+        axis = range(ndarray.ndim)[axis]
+    except:
+        raise Exception('Axis "{}" incompatible with the {}-dimension array'.format(axis, ndim))
+
+    # If array is 1-D and numpy version is > 1.9 numpy.unique will suffice
+    if all([ndim == 1,
+            int(np.__version__.split('.')[0]) >= 1,
+            int(np.__version__.split('.')[1]) >= 9]):
+        modals, counts = np.unique(ndarray, return_counts=True)
+        index = np.argmax(counts)
+        return modals[index], counts[index]
+
+    # Sort array
+    sort = np.sort(ndarray, axis=axis)
+    # Create array to transpose along the axis and get padding shape
+    transpose = np.roll(np.arange(ndim)[::-1], axis)
+    shape = list(sort.shape)
+    shape[axis] = 1
+    # Create a boolean array along strides of unique values
+    strides = np.concatenate([np.zeros(shape=shape, dtype='bool'),
+                                 np.diff(sort, axis=axis) == 0,
+                                 np.zeros(shape=shape, dtype='bool')],
+                                axis=axis).transpose(transpose).ravel()
+    # Count the stride lengths
+    counts = np.cumsum(strides)
+    counts[~strides] = np.concatenate([[0], np.diff(counts[~strides])])
+    counts[strides] = 0
+    # Get shape of padded counts and slice to return to the original shape
+    shape = np.array(sort.shape)
+    shape[axis] += 1
+    shape = shape[transpose]
+    slices = [slice(None)] * ndim
+    slices[axis] = slice(1, None)
+    # Reshape and compute final counts
+    counts = counts.reshape(shape).transpose(transpose)[slices] + 1
+
+    # Find maximum counts and return modals/counts
+    slices = [slice(None, i) for i in sort.shape]
+    del slices[axis]
+    index = np.ogrid[slices]
+    index.insert(axis, np.argmax(counts, axis=axis))
+    return sort[index], counts[index]
 
 # =============================================================================
 # Define functions for GUI
@@ -132,7 +188,7 @@ def runRF(rfMaster,treeNum,):
     rfTree = treeNum.get()
     rfMaster.destroy()
     global rfclf
-    rfclf = RandomForestClassifier(n_estimators = rfTree, oob_score=True,warm_start=True,n_jobs=-1)
+    rfclf = GradientBoostingClassifier(n_estimators = rfTree,max_features='sqrt',warm_start=True)
 
 def runMLP(mlpMaster,layerNum,neuronNum,):
     mlpLayer = layerNum.get()
@@ -142,6 +198,12 @@ def runMLP(mlpMaster,layerNum,neuronNum,):
     layers = np.ones(mlpLayer,dtype = np.int)*mlpNeuron
     mlpclf = MLPClassifier(solver='adam',hidden_layer_sizes = layers.tolist(),max_iter=4000,tol=1e-8,warm_start=True)
 
+def readBlockData(image,rowStart, colStart, row,col,featNum):
+    blockImage = image.ReadAsArray(colStart,rowStart,col,row)
+    blockImage = blockImage.reshape((featNum,col*row)).transpose()
+    return blockImage
+    
+    
 # =============================================================================
 # Define the GUI used for obtaining the data and specifications
 # =============================================================================
@@ -151,10 +213,11 @@ Label(master, text="Labeled data ").grid(row=1)
 
 imageLabel = Entry(master)
 trainLabel = Entry(master)
-imageLabel.insert(10,'gdalTesting.tif')
+imageLabel.insert(10,'myImage.tif')
 imageLabel.grid(row=0, column=1)
+trainLabel.insert(10,'myTrainingData.csv')
 trainLabel.grid(row=1, column=1)
-Label(master,text="Check the methods that will classify the data").grid(row=2)
+Label(master,text="Check classifiers that you would like to use").grid(row=2)
 
 svmRun = IntVar() 
 rfRun = IntVar() 
@@ -175,77 +238,74 @@ mainloop()
 # =============================================================================
 # Preprocessing of input data
 # =============================================================================
+trainFile = np.genfromtxt(trainFileName,delimiter=',',dtype='float64')
+trainFile = trainFile[1:,:]
+allSamples = trainFile[:,3:]
+allLabels = trainFile[:,1]
+sampleNum = trainFile.shape[0]
 
+testingProportion = 0.25 #proportion of data to hold for testing
 
+trainSampleNum = int(np.floor(sampleNum*(1-testingProportion)))
+testSampleNum = sampleNum-trainSampleNum
 
+testSampleInd = np.random.choice(sampleNum,testSampleNum,replace=False)
+testSamples = allSamples[testSampleInd,:]
+testLabels = allLabels[testSampleInd]
 
-m = 80
-n = 200
-image = np.random.rand(m,n,18)
-train = np.random.randint(20,size=(m,n))
+trainSampleInd = np.setdiff1d(np.arange(sampleNum),testSampleInd)
+trainSamples = allSamples[trainSampleInd,:]
+trainLabels = allLabels[trainSampleInd]
 
-sampleNum = (train>10).sum()
-labels = np.unique(train[train>10])
-
-
-Xall = image[train>10,:]
-testSize = np.floor((Xall.shape[0]*3)/4)
-
-Xtrain = Xall[0:int(testSize),:]
-Xtest = Xall[Xtrain.shape[0]:Xall.shape[0],:]
-
-yAll = train[train>10]
-yTrain = yAll[0:int(testSize)]
-yTest = yAll[Xtrain.shape[0]:Xall.shape[0]]
-
-newShape = (image.shape[0]*image.shape[1], image.shape[2])
-imageVectorized = image.reshape(newShape)
+imageToClassify = gdal.Open(imageFileName)
+imageXSize = imageToClassify.RasterXSize
+imageYSize = imageToClassify.RasterYSize
+featNum = imageToClassify.RasterCount
+imageSize = imageXSize*imageYSize
 
 
 # =============================================================================
 # Do the training
 # =============================================================================    
 if svmDo:
-    svmclf.fit(Xtrain,yTrain)
+    svmclf.fit(trainSamples,trainLabels)
 if sgdDo:
-    sgdclf.fit(Xtrain,yTrain)
+    sgdclf.fit(trainSamples,trainLabels)
 if rfDo:
-    rfclf.fit(Xtrain,yTrain)
+    rfclf.fit(trainSamples,trainLabels)
 if mlpDo:
-    mlpclf.fit(Xtrain,yTrain)
+    mlpclf.fit(trainSamples,trainLabels)
 
 # =============================================================================
 # Compute summary statistics and other analysis
 # =============================================================================    
-
-
 print '\nSummary Statistics'
 
 if svmDo:
-    svmTestPred = svmclf.predict(Xtest)
-    svmTestAcc = (svmTestPred==yTest).sum() / yTest.size
+    svmTestPred = svmclf.predict(testSamples)
+    svmTestAcc = (svmTestPred==testLabels).sum() / testLabels.size
     df = pd.DataFrame()
-    df['truth'] = yTest
+    df['truth'] = testLabels
     df['predict'] = svmTestPred
     print '\nSupport Vector Machine'
     print 'Out of bag accuracy: ' + str(svmTestAcc*100)
     print 'Confusion Matrix'
     print(pd.crosstab(df['truth'], df['predict'], margins=True)) 
 if sgdDo:
-    sgdTestPred = sgdclf.predict(Xtest)
-    sgdTestAcc = (sgdTestPred==yTest).sum() / yTest.size
+    sgdTestPred = sgdclf.predict(testSamples)
+    sgdTestAcc = (sgdTestPred==testLabels).sum() / testLabels.size
     df = pd.DataFrame()
-    df['truth'] = yTest
+    df['truth'] = testLabels
     df['predict'] = sgdTestPred
     print '\nStochastic Gradient Descent'
     print 'Out of bag accuracy: ' + str(sgdTestAcc*100)
     print 'Confusion Matrix'
     print(pd.crosstab(df['truth'], df['predict'], margins=True)) 
 if rfDo:
-    rfTestPred = rfclf.predict(Xtest)
-    rfTestAcc = (rfTestPred==yTest).sum() / yTest.size
+    rfTestPred = rfclf.predict(testSamples)
+    rfTestAcc = (rfTestPred==testLabels).sum() / testLabels.size
     df = pd.DataFrame()
-    df['truth'] = yTest
+    df['truth'] = testLabels
     df['predict'] = rfTestPred
     print '\nRandom Forest'
     print 'Out of bag accuracy: ' + str(rfTestAcc*100)
@@ -255,10 +315,10 @@ if rfDo:
     print 'Confusion Matrix'
     print(pd.crosstab(df['truth'], df['predict'], margins=True)) 
 if mlpDo:
-    mlpTestPred = mlpclf.predict(Xtest)
-    mlpTestAcc = (mlpTestPred==yTest).sum() / yTest.size
+    mlpTestPred = mlpclf.predict(testSamples)
+    mlpTestAcc = (mlpTestPred==testLabels).sum() / testLabels.size
     df = pd.DataFrame()
-    df['truth'] = yTest
+    df['truth'] = testLabels
     df['predict'] = mlpTestPred
     print '\nMulti-Layered Perceptron'
     print 'Out of bag accuracy: ' + str(mlpTestAcc*100)
@@ -266,7 +326,7 @@ if mlpDo:
     print(pd.crosstab(df['truth'], df['predict'], margins=True))     
 
 # =============================================================================
-# Ensemble Techniques
+# Get ensemble specifications
 # =============================================================================    
 ensembleDialogue = Tk()
 Label(ensembleDialogue, text='Based on summary statistics, select which of the following classifiers you would like to use.  (Note: selecting more than one will result in an ensemble classification)').grid(row=0)
@@ -282,30 +342,42 @@ Checkbutton(ensembleDialogue, text='MLP', variable=mlpUse).grid(row=4, sticky=W)
 Button(ensembleDialogue,text = "Continue",command = ensembleDialogue.destroy).grid(row=5)
 ensembleDialogue.mainloop()
 
-ensemble = [svmUse.get(), sgdUse.get(), rfUse.get(), mlpUse.get()]
-pred = np.zeros((imageVectorized.shape[0],4))
+# =============================================================================
+# Perform ensemble classification
+# =============================================================================
+ensemble = np.array([svmUse.get(), sgdUse.get(), rfUse.get(), mlpUse.get()])
+ensemblePred = np.ones((imageSize))*-1
 
-if svmUse.get():
-    svmPred = svmclf.predict(imageVectorized)
-    pred[:,0] = svmPred
-if sgdUse.get():
-    sgdPred = sgdclf.predict(imageVectorized)
-    pred[:,1] = sgdPred
-if rfUse.get():
-    rfPred = rfclf.predict(imageVectorized)
-    pred[:,2] = rfPred
-if mlpUse.get():
-    mlpPred = mlpclf.predict(imageVectorized)
-    pred[:,3] = mlpPred
+colPerIt = 64
+blockSize = imageXSize*colPerIt
+blockPred = np.zeros((blockSize,4))
+pred = np.ones((imageSize,4))*-1
+
+lastEntry = np.arange(imageSize,step=blockSize)[-1:]
+
+for i in np.arange(lastEntry,step=blockSize):
+    tmpData = readBlockData(imageToClassify,int(i/imageXSize),0,colPerIt,imageXSize,featNum)
+    if svmUse.get():
+        svmPred = svmclf.predict(tmpData)
+        blockPred[:,0] = svmPred
+    if sgdUse.get():
+        sgdPred = sgdclf.predict(tmpData)
+        blockPred[:,1] = sgdPred
+    if rfUse.get():
+        rfPred = rfclf.predict(tmpData)
+        blockPred[:,2] = rfPred
+    if mlpUse.get():
+        mlpPred = mlpclf.predict(tmpData)
+        blockPred[:,3] = mlpPred
+        
+    blockPredValid = blockPred[:,np.nonzero(ensemble)].reshape((blockSize,ensemble.sum()))
+    blockEnsemble = mode(blockPredValid.transpose())
+    ensemblePred[i:i+blockSize] = blockEnsemble[0].transpose()
+    pred[i:i+blockSize] = blockPred
     
-pred = pred[:,np.nonzero(ensemble)]    
+ensemblePred = ensemblePred.reshape(imageXSize,imageYSize)
 
-ensemblePred = np.zeros(imageVectorized.shape[0]) 
-count = 0
 
-for i in pred:
-    ensemblePred[count] = scipy.stats.mode(i,axis=None)[0]
-    count = count + 1
     
     
     
