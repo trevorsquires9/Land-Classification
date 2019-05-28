@@ -11,7 +11,7 @@
 # 
 #   Notes
 #       - Feature scaling is a big deal for inputs like sun angle (solved by output scaling)
-#       - Summary statistics are hard to come by (solved by r2 score)
+#       - Summary statistics are hard to come by (solved by r2 score and MSE)
 #
 # =============================================================================
 
@@ -22,9 +22,41 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import r2_score
 import numpy as np
+from joblib import dump,load
+
+
 
 # =============================================================================
-# Get data (make up data at the moment)
+# Create the network (alternatively, load the network)
+# =============================================================================
+firstTime = False
+
+if firstTime:
+    layerNum = 3
+    neuronNum = 60
+    batchSize = int(np.sqrt (100000))
+    exitCond = 20
+    maxIt = 2000
+    tol = 1e-6
+    alpha = 0.001
+    hLayers = np.ones(layerNum,dtype=np.int32)*neuronNum
+    mlp = MLPRegressor(hidden_layer_sizes = hLayers, 
+                       max_iter = maxIt, 
+                       n_iter_no_change=exitCond,
+                       batch_size = batchSize,
+                       learning_rate='adaptive',
+                       tol=tol,
+                       alpha=alpha,
+                       verbose=True,
+                       warm_start=True)
+else:
+    mlp = load('myModel.joblib')
+    outputScaler = load('outputScale.joblib')
+    inputScaler = load('inputScale.joblib')
+
+
+# =============================================================================
+ # Get data (make up data at the moment)
 # =============================================================================
 inputFeatNum = 4
 outputFeatNum = 2
@@ -38,35 +70,25 @@ for i in range(SampleNum):
 #    Truth[i,1] = Samples[i,:].mean()
     
 
-# =============================================================================
-# Preprocess Data
-# =============================================================================
 trainSamples,testSamples,trainTruth,testTruth = train_test_split(Samples,Truth,test_size=0.1)
 
-inputScaler = StandardScaler()
-inputScaler.fit(trainSamples)
+if firstTime:
+    inputScaler = StandardScaler()
+    inputScaler.fit(trainSamples)
+    outputScaler = StandardScaler()
+    outputScaler.fit(trainTruth)
 
 trainSamples = inputScaler.transform(trainSamples)
 testSamples = inputScaler.transform(testSamples)
 
-#Should we? I don't think so
-outputScaler = StandardScaler()
-outputScaler.fit(trainTruth)
-
 trainTruth = outputScaler.transform(trainTruth)
 testTruth = outputScaler.transform(testTruth)
 
-# =============================================================================
-# Create, train and evaluate the network
-# =============================================================================
-layerNum = 25
-neuronNum = 50
-hLayers = np.ones(layerNum,dtype=np.int32)*neuronNum
-mlp = MLPRegressor(hidden_layer_sizes = hLayers, max_iter = 100,n_iter_no_change=20,batch_size = int(SampleNum/200),
-                   learning_rate='adaptive',tol=1e-6, verbose=True)
 
+# =============================================================================
+# Train and predict
+# =============================================================================
 mlp.fit(trainSamples,trainTruth)
-
 testPred = mlp.predict(testSamples)
 
 
@@ -80,3 +102,11 @@ relErr = np.abs(testPred-testTruth)/testTruth
 relErrAvg = relErr.sum()/SampleNum
 worstCase = relErr.max()
 r2Score = r2_score(testTruth,testPred)
+
+
+# =============================================================================
+# Store new model
+# =============================================================================
+dump(mlp,'myModel.joblib')
+dump(inputScaler,'inputScale.joblib')
+dump(outputScaler,'outputScale.joblib')
