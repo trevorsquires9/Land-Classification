@@ -17,6 +17,7 @@
 #       - Add comments where helpful
 #       - Figure out a better way to handle file IO (wrt directories)
 #       - Handle the last not so block-block
+#       - Save feature importances
 #
 # =============================================================================
 # Necessary Packages
@@ -375,8 +376,8 @@ for i in np.arange(lastEntry,step=blockSize):
     ensemblePred[i:i+blockSize] = blockEnsemble[0].transpose()
     pred[i:i+blockSize] = blockPred
 
-tmpData = readBlockData(imageToClassify,int(lastEntry/imageXSize),0,imageYSize-lastEntry/imageXSize,imageXSize,featNum)
-blockPred = np.zeros((imageXSize*(imageYSize-lastEntry/imageXSize),4))
+tmpData = readBlockData(imageToClassify,int(lastEntry/imageXSize),0,int(imageYSize-lastEntry/imageXSize),imageXSize,featNum)
+blockPred = np.zeros((imageXSize*(int(imageYSize-lastEntry/imageXSize)),4))
 if svmUse.get():
     svmPred = svmclf.predict(tmpData)
     blockPred[:,0] = svmPred
@@ -394,6 +395,17 @@ pred[lastEntry:] = blockPred
 ensemblePred[lastEntry:] = mode(blockPred[:,np.nonzero(ensemble)].reshape((imageSize-lastEntry,ensemble.sum())).transpose())[0].transpose()
 ensemblePred = ensemblePred.reshape(imageXSize,imageYSize)
 
+# =============================================================================
+# Write to file
+# =============================================================================
+driver = gdal.GetDriverByName('GTiff')
+outdata = driver.Create('Predictions.tif', imageYSize,imageXSize,1,gdal.GDT_UInt16)
+outdata.SetGeoTransform(imageToClassify.GetGeoTransform())
+outdata.SetProjection(imageToClassify.GetProjection())
+outdata.GetRasterBand(1).WriteArray(ensemblePred)
+outdata.FlushCache()
+outdata = None
+imageToClassify = None
 
     
     
