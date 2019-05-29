@@ -14,12 +14,9 @@
 #       - Summary statistics are hard to come by (solved by r2 score and MSE)
 #
 # =============================================================================
-
-import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.neural_network import MLPRegressor
-from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import r2_score
 import numpy as np
 from joblib import dump,load
@@ -36,15 +33,14 @@ if firstTime:
     neuronNum = 60
     batchSize = int(np.sqrt (100000))
     exitCond = 20
-    maxIt = 2000
+    maxIt = 100
     tol = 1e-6
     alpha = 0.001
     hLayers = np.ones(layerNum,dtype=np.int32)*neuronNum
     mlp = MLPRegressor(hidden_layer_sizes = hLayers, 
                        max_iter = maxIt, 
-                       n_iter_no_change=exitCond,
                        batch_size = batchSize,
-                       learning_rate='adaptive',
+                       n_iter_no_change=5000,
                        tol=tol,
                        alpha=alpha,
                        verbose=True,
