@@ -29,13 +29,13 @@ from joblib import dump,load
 firstTime = True
 
 if firstTime:
-    layerNum = 7
-    neuronNum = 30
+    layerNum = 3
+    neuronNum = 50
     batchSize = int(np.sqrt (100000))
     exitCond = 20
-    maxIt = 2000
+    maxIt = 200
     tol = 1e-6
-    alpha = 0.005
+    alpha = 0.0005
     hLayers = np.ones(layerNum,dtype=np.int32)*neuronNum
     mlp = MLPRegressor(hidden_layer_sizes = hLayers, 
                        max_iter = maxIt, 
@@ -54,8 +54,11 @@ else:
 # =============================================================================
  # Get data (make up data at the moment)
 # =============================================================================
-inputFeatNum = 4
-outputFeatNum = 2
+tableData = np.array([[0.905, -8.604],[0.94,-5.809],[0.938,-4.996],[0.962,-3.649],
+                      [0.964,-3.021],[1,-4.521],[0.961,-5.522],[0.978,-2.992]])
+ 
+inputFeatNum = 40
+outputFeatNum = 20
 
 SampleNum = 100000
 Samples = np.random.randint(40,size=(SampleNum,inputFeatNum))+1
