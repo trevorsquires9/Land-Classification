@@ -393,16 +393,35 @@ if mlpUse.get():
 pred[lastEntry:] = blockPred
 
 ensemblePred[lastEntry:] = mode(blockPred[:,np.nonzero(ensemble)].reshape((imageSize-lastEntry,ensemble.sum())).transpose())[0].transpose()
-ensemblePred = ensemblePred.reshape(imageXSize,imageYSize)
 
 # =============================================================================
 # Write to file
 # =============================================================================
 driver = gdal.GetDriverByName('GTiff')
-outdata = driver.Create('Predictions.tif', imageYSize,imageXSize,1,gdal.GDT_UInt16)
+outdata = driver.Create('Predictions.tif', imageYSize,imageXSize,ensemble.sum()+1,gdal.GDT_UInt16)
 outdata.SetGeoTransform(imageToClassify.GetGeoTransform())
 outdata.SetProjection(imageToClassify.GetProjection())
-outdata.GetRasterBand(1).WriteArray(ensemblePred)
+bandIt = 1
+print 'Your .tif file will come with bands in the following order'
+if svmUse.get():
+    print 'SVM predictions'
+    outdata.GetRasterBand(bandIt).WriteArray(pred[:,0].reshape(imageXSize,imageYSize))
+    bandIt += 1
+if sgdUse.get():
+    print 'SGD predictions'
+    outdata.GetRasterBand(bandIt).WriteArray(pred[:,1].reshape(imageXSize,imageYSize))
+    bandIt += 1
+if rfUse.get():
+    print 'Random forest predictions'
+    outdata.GetRasterBand(bandIt).WriteArray(pred[:,2].reshape(imageXSize,imageYSize))
+    bandIt += 1
+if mlpUse.get():
+    print 'MLP predictions'
+    outdata.GetRasterBand(bandIt).WriteArray(pred[:,3].reshape(imageXSize,imageYSize))
+    bandIt += 1
+    
+print 'Ensemble predictions'
+outdata.GetRasterBand(bandIt).WriteArray(ensemblePred.reshape(imageXSize,imageYSize))
 outdata.FlushCache()
 outdata = None
 imageToClassify = None
