@@ -26,16 +26,16 @@ from joblib import dump,load
 # =============================================================================
 # Create the network (alternatively, load the network)
 # =============================================================================
-firstTime = False
+firstTime = True
 
 if firstTime:
-    layerNum = 3
-    neuronNum = 60
+    layerNum = 7
+    neuronNum = 30
     batchSize = int(np.sqrt (100000))
     exitCond = 20
-    maxIt = 100
+    maxIt = 2000
     tol = 1e-6
-    alpha = 0.001
+    alpha = 0.005
     hLayers = np.ones(layerNum,dtype=np.int32)*neuronNum
     mlp = MLPRegressor(hidden_layer_sizes = hLayers, 
                        max_iter = maxIt, 
