@@ -11,19 +11,16 @@
 #       multiple different classification algorithms while viewing summary 
 #       statistics in the form of confusion matricesand out of bag cross validation. 
 # 
-#   Notes
-#       - Figure out why it doesn't like to read .csv file and why I have to remove
-#         the first training entry
+#   TODO
 #       - Add comments where helpful
-#       - Figure out a better way to handle file IO (wrt directories)
-#       - Handle the last not so block-block
 #       - Save feature importances
+#       - Try to create executable again
+#       - Reword the text
 #
 # =============================================================================
 # Necessary Packages
 # =============================================================================
 from __future__ import division
-import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
@@ -41,14 +38,14 @@ from osgeo import gdal_array
 # =============================================================================
 def mode(ndarray, axis=0):
     # Check inputs
-    ndarray = np.asarray(ndarray)
+    ndarray = np.asarray((ndarray))
     ndim = ndarray.ndim
     if ndarray.size == 1:
         return (ndarray[0], 1)
     elif ndarray.size == 0:
         raise Exception('Cannot compute mode on empty array')
     try:
-        axis = range(ndarray.ndim)[axis]
+        axis = range(ndarray.ndim)[(axis)]
     except:
         raise Exception('Axis "{}" incompatible with the {}-dimension array'.format(axis, ndim))
 
@@ -106,7 +103,9 @@ def getMainData():
     trainFileName = trainLabel.get()
     master.destroy()
     image = gdal.Open(imageFileName)
-    train = gdal.Open(trainFileName)
+#    csv = pd.read_csv(trainFileName)
+#    csvBands = csv.iloc[:,3:21]
+#    train = csvBands.to_numpy()
     
     if svmDo:
         svmMaster = Tk()
@@ -150,7 +149,7 @@ def getMainData():
         mlpMaster = Tk()
         Label(mlpMaster, text="Indicate the number of hidden layers to use:").grid(row=0,column=0)
         layerNum = IntVar(mlpMaster)
-        layerNum.set(10)
+        layerNum.set(2)
         selectLayer = OptionMenu(mlpMaster, layerNum,2,5,10,15,20,25,50,100)
         selectLayer.grid(row=0,column=1)
         Label(mlpMaster, text="Indicate the number of neurons to use:").grid(row=1,column=0)
@@ -199,9 +198,9 @@ def runMLP(mlpMaster,layerNum,neuronNum,):
     layers = np.ones(mlpLayer,dtype = np.int)*mlpNeuron
     mlpclf = MLPClassifier(solver='adam',hidden_layer_sizes = layers.tolist(),max_iter=4000,tol=1e-8,warm_start=True)
 
-def readBlockData(image,rowStart, colStart, row,col,featNum):
-    blockImage = image.ReadAsArray(colStart,rowStart,col,row)
-    blockImage = blockImage.reshape((featNum,col*row)).transpose()
+def readBlockData(image,xOffset, yOffset, xSize,ySize,featNum):
+    blockImage = image.ReadAsArray(xOffset,yOffset,xSize,ySize)
+    blockImage = blockImage.reshape((featNum,xSize*ySize)).transpose()
     return blockImage
     
     
@@ -241,8 +240,8 @@ mainloop()
 # =============================================================================
 trainFile = np.genfromtxt(trainFileName,delimiter=',',dtype='float64')
 trainFile = trainFile[1:,:]
-allSamples = trainFile[:,3:]
-allLabels = trainFile[:,1]
+allSamples = trainFile[:,2:20]#allSamples = trainFile[:,3:]
+allLabels = trainFile[:,21]#allLabels = trainFile[:,1]
 sampleNum = trainFile.shape[0]
 
 testingProportion = 0.25 #proportion of data to hold for testing
@@ -335,7 +334,7 @@ Label(ensembleDialogue, text='Based on summary statistics, select which of the f
 svmUse = IntVar()
 sgdUse = IntVar()
 rfUse = IntVar()
-mlpUse = IntVar() 
+mlpUse = IntVar()
 Checkbutton(ensembleDialogue, text='SVM', variable=svmUse).grid(row=1, sticky=W) 
 Checkbutton(ensembleDialogue, text='SGD', variable=sgdUse).grid(row=2, sticky=W) 
 Checkbutton(ensembleDialogue, text='Random Forest', variable=rfUse).grid(row=3, sticky=W) 
@@ -343,85 +342,88 @@ Checkbutton(ensembleDialogue, text='MLP', variable=mlpUse).grid(row=4, sticky=W)
 Button(ensembleDialogue,text = "Continue",command = ensembleDialogue.destroy).grid(row=5)
 ensembleDialogue.mainloop()
 
+
 # =============================================================================
-# Perform ensemble classification
+# Perform ensemble classification (Blocked Method)
 # =============================================================================
 ensemble = np.array([svmUse.get(), sgdUse.get(), rfUse.get(), mlpUse.get()])
-ensemblePred = np.ones((imageSize))*-1
+bandNum = ensemble.sum()+1
+ensemble = np.nonzero(ensemble)[0]
 
 colPerIt = 64
-blockSize = imageXSize*colPerIt
-blockPred = np.zeros((blockSize,4))
-pred = np.ones((imageSize,4))*-1
+blockSize = imageYSize*colPerIt
+pred = np.ones((4,imageYSize,imageXSize))*-1
 
 lastEntry = np.arange(imageSize,step=blockSize)[-1:][0]
 
-for i in np.arange(lastEntry,step=blockSize):
-    tmpData = readBlockData(imageToClassify,int(i/imageXSize),0,colPerIt,imageXSize,featNum)
+for i in np.arange(lastEntry/blockSize):
+    i = int(i)
+    tmpData = readBlockData(imageToClassify,i*colPerIt,0,colPerIt,imageYSize,featNum)
     if svmUse.get():
         svmPred = svmclf.predict(tmpData)
-        blockPred[:,0] = svmPred
+        svmPred = svmPred.transpose().reshape(imageYSize,colPerIt)
+        pred[0,:,i*colPerIt:(i+1)*colPerIt] = svmPred
     if sgdUse.get():
         sgdPred = sgdclf.predict(tmpData)
-        blockPred[:,1] = sgdPred
+        sgdPred = sgdPred.transpose().reshape(imageYSize,colPerIt)
+        pred[1,:,i*colPerIt:(i+1)*colPerIt] = sgdPred
     if rfUse.get():
         rfPred = rfclf.predict(tmpData)
-        blockPred[:,2] = rfPred
+        rfPred = rfPred.transpose().reshape(imageYSize,colPerIt)
+        pred[2,:,i*colPerIt:(i+1)*colPerIt] = rfPred
     if mlpUse.get():
         mlpPred = mlpclf.predict(tmpData)
-        blockPred[:,3] = mlpPred
-        
-    blockPredValid = blockPred[:,np.nonzero(ensemble)].reshape((blockSize,ensemble.sum()))
-    blockEnsemble = mode(blockPredValid.transpose())
-    ensemblePred[i:i+blockSize] = blockEnsemble[0].transpose()
-    pred[i:i+blockSize] = blockPred
+        mlpPred = mlpPred.transpose().reshape(imageYSize,colPerIt)
+        pred[3,:,i*colPerIt:(i+1)*colPerIt] = mlpPred
 
-tmpData = readBlockData(imageToClassify,int(lastEntry/imageXSize),0,int(imageYSize-lastEntry/imageXSize),imageXSize,featNum)
-blockPred = np.zeros((imageXSize*(int(imageYSize-lastEntry/imageXSize)),4))
+
+tmpData = readBlockData(imageToClassify,(i+1)*colPerIt,0,imageXSize-(i+1)*colPerIt,imageYSize,featNum)
 if svmUse.get():
     svmPred = svmclf.predict(tmpData)
-    blockPred[:,0] = svmPred
+    svmPred = svmPred.transpose().reshape(imageYSize,imageXSize-(i+1)*colPerIt)
+    pred[0,:,(i+1)*colPerIt:] = svmPred
 if sgdUse.get():
     sgdPred = sgdclf.predict(tmpData)
-    blockPred[:,1] = sgdPred
+    sgdPred = sgdPred.transpose().reshape(imageYSize,imageXSize-(i+1)*colPerIt)
+    pred[1,:,(i+1)*colPerIt:] = sgdPred
 if rfUse.get():
     rfPred = rfclf.predict(tmpData)
-    blockPred[:,2] = rfPred
+    rfPred = rfPred.transpose().reshape(imageYSize,imageXSize-(i+1)*colPerIt)
+    pred[2,:,(i+1)*colPerIt:] = rfPred
 if mlpUse.get():
     mlpPred = mlpclf.predict(tmpData)
-    blockPred[:,3] = mlpPred
-pred[lastEntry:] = blockPred
+    mlpPred = mlpPred.transpose().reshape(imageYSize,imageXSize-(i+1)*colPerIt)
+    pred[3,:,(i+1)*colPerIt:] = mlpPred
 
-ensemblePred[lastEntry:] = mode(blockPred[:,np.nonzero(ensemble)].reshape((imageSize-lastEntry,ensemble.sum())).transpose())[0].transpose()
-
+ensemblePred = np.array(mode(pred[ensemble,:,:]))[0]
 # =============================================================================
 # Write to file
 # =============================================================================
 driver = gdal.GetDriverByName('GTiff')
-outdata = driver.Create('Predictions.tif', imageYSize,imageXSize,ensemble.sum()+1,gdal.GDT_UInt16)
+outdata = driver.Create('pleaseWork.tif', imageXSize,imageYSize,bandNum,gdal.GDT_UInt16)
 outdata.SetGeoTransform(imageToClassify.GetGeoTransform())
 outdata.SetProjection(imageToClassify.GetProjection())
 bandIt = 1
 print 'Your .tif file will come with bands in the following order'
 if svmUse.get():
     print 'SVM predictions'
-    outdata.GetRasterBand(bandIt).WriteArray(pred[:,0].reshape(imageXSize,imageYSize))
+    outdata.GetRasterBand(bandIt).WriteArray(pred[0,:,:])
     bandIt += 1
 if sgdUse.get():
     print 'SGD predictions'
-    outdata.GetRasterBand(bandIt).WriteArray(pred[:,1].reshape(imageXSize,imageYSize))
+    outdata.GetRasterBand(bandIt).WriteArray(pred[1,:,:])
     bandIt += 1
 if rfUse.get():
     print 'Random forest predictions'
-    outdata.GetRasterBand(bandIt).WriteArray(pred[:,2].reshape(imageXSize,imageYSize))
+    outdata.GetRasterBand(bandIt).WriteArray(pred[2,:,:])
     bandIt += 1
 if mlpUse.get():
     print 'MLP predictions'
-    outdata.GetRasterBand(bandIt).WriteArray(pred[:,3].reshape(imageXSize,imageYSize))
+    outdata.GetRasterBand(bandIt).WriteArray(pred[3,:,:])
     bandIt += 1
     
 print 'Ensemble predictions'
-outdata.GetRasterBand(bandIt).WriteArray(ensemblePred.reshape(imageXSize,imageYSize))
+outdata.GetRasterBand(bandIt).WriteArray(ensemblePred.reshape(imageYSize,imageXSize))
 outdata.FlushCache()
 outdata = None
 imageToClassify = None
