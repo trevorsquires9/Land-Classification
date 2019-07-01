@@ -3,7 +3,11 @@ Notes
 	- Much more flexible than atmospheric correction.  Allows for multiple models and a stand alone application. 
 
 Method of the stand alone application (simpleClassifier.py)
-	1. Provide an image and training data in the desired format to the GUI. Data will be written as a .tif file in the same directory. This pretrained model takes in 18 band .tif files (9 from two separate dates of Sentinnel 2 data). The application will run the user through specifications. 
+	1. Provide an image and training data in the desired format to the GUI. Data will be written as a .tif file in the same directory. The application will run the user through specifications. This pretrained model training data where: the first row is the column names (optional), the first two columns are not raster data (i.e. useless for classification), the last three columns are not raster data, and the last column is the classification labels.  For example, 
+
+0,397,82,86,99,135,117,109,118,90,124,164,173,133,229,259,325,250,154,298,Permenant Water,1
+
+In this example, the values "0", "397", "Permenant", and "Water" will be thrown out and "1" will be used as the classification label. The remaining 18 values are used as input data. 
 
 Method of training new model
 	1. Run the dataPreprocessing.py script on each of your training data sets before applying it to the model. Be sure not to overwrite any data the model has already trained on! Also keep the nomenclature constant so that the trainer can read the files correctly. The trained model will be saved under a specified name. 
@@ -30,3 +34,5 @@ Method of predicting
 
 -------------------------------Possibly discontinued---------------------------------------------
 
+
+General purpose warning - Always create a new model in a new directory
