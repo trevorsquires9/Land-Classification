@@ -11,11 +11,6 @@
 #       multiple different classification algorithms while viewing summary 
 #       statistics in the form of confusion matricesand out of bag cross validation. 
 # 
-#   TODO
-#       - Add comments where helpful
-#       - Save feature importances
-#       - Try to create executable again
-#       - Reword the text
 #
 # =============================================================================
 # Necessary Packages
@@ -347,7 +342,7 @@ ensembleDialogue.mainloop()
 # Perform ensemble classification (Blocked Method)
 # =============================================================================
 ensemble = np.array([svmUse.get(), sgdUse.get(), rfUse.get(), mlpUse.get()])
-bandNum = ensemble.sum()+1
+bandNum = ensemble.sum()+2 #one for each model and then an ensemble+ensemble count band
 ensemble = np.nonzero(ensemble)[0]
 
 colPerIt = 64
@@ -395,7 +390,9 @@ if mlpUse.get():
     mlpPred = mlpPred.transpose().reshape(imageYSize,imageXSize-(i+1)*colPerIt)
     pred[3,:,(i+1)*colPerIt:] = mlpPred
 
-ensemblePred = np.array(mode(pred[ensemble,:,:]))[0]
+ensembleStruct = np.array(mode(pred[ensemble,:,:]))
+ensemblePred = ensembleStruct[0]
+ensembleCount = ensembleStruct[1]
 # =============================================================================
 # Write to file
 # =============================================================================
@@ -424,6 +421,7 @@ if mlpUse.get():
     
 print 'Ensemble predictions'
 outdata.GetRasterBand(bandIt).WriteArray(ensemblePred.reshape(imageYSize,imageXSize))
+outdata.GetRasterBand(bandIt).WriteArray(ensembleCount.reshape(imageYSize,imageXSize))
 outdata.FlushCache()
 outdata = None
 imageToClassify = None
