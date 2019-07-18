@@ -421,7 +421,7 @@ if mlpUse.get():
     
 print 'Ensemble predictions'
 outdata.GetRasterBand(bandIt).WriteArray(ensemblePred.reshape(imageYSize,imageXSize))
-outdata.GetRasterBand(bandIt).WriteArray(ensembleCount.reshape(imageYSize,imageXSize))
+outdata.GetRasterBand(bandIt+1).WriteArray(ensembleCount.reshape(imageYSize,imageXSize))
 outdata.FlushCache()
 outdata = None
 imageToClassify = None
